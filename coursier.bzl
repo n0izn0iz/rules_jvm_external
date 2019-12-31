@@ -454,10 +454,17 @@ def _coursier_fetch_impl(repository_ctx):
 
     _windows_check(repository_ctx)
 
+    # This requires a WORKSPACE and BUILD files in the root workspace so if you have a better idea I'm happy to hear it
+    workspace_path = repository_ctx.path(Label("@//:WORKSPACE")).dirname
+
     # Deserialize the spec blobs
     repositories = []
     for repository in repository_ctx.attr.repositories:
-        repositories.append(json_parse(repository))
+        repo_obj = json_parse(repository)
+        repo_url = repo_obj["repo_url"]
+        if repo_url.startswith("./"):
+          repo_obj["repo_url"] = "file://localhost" + str(workspace_path) + repo_url[len("."):]
+        repositories.append(repo_obj)
 
     artifacts = []
     for a in repository_ctx.attr.artifacts:
@@ -495,6 +502,8 @@ def _coursier_fetch_impl(repository_ctx):
     cmd.append("--quiet")
     cmd.append("--no-default")
     cmd.extend(["--json-output-file", "dep-tree.json"])
+    # add file urls to cache so they are in @maven repository
+    cmd.extend(["--cache-file-artifacts=true"])
 
     if repository_ctx.attr.fail_on_missing_checksum:
         cmd.extend(["--checksum", "SHA-1,MD5"])
@@ -574,7 +583,7 @@ def _coursier_fetch_impl(repository_ctx):
 
         # Only support http/https transports
         for part in filepath_parts:
-            if part == "http" or part == "https":
+            if part == "http" or part == "https" or part == "file":
                 protocol = part
                 break
         if protocol == None:
